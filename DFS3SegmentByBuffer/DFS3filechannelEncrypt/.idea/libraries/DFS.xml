@@ -1,0 +1,12 @@
+<component name="libraryTable">
+  <library name="DFS">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/DFS/DFS3v2refactored.zip!/" />
+      <root url="jar://$PROJECT_DIR$/DFS/DFS3v1.zip!/" />
+      <root url="jar://$PROJECT_DIR$/DFS/DFSv4DFSInit.zip!/" />
+      <root url="jar://$PROJECT_DIR$/DFS/DFS3v3withwatchsvc.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
