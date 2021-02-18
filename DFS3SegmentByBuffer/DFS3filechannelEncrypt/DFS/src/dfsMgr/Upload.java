@@ -12,7 +12,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import dfs3test.xmlHandler.*;
 
 import static dfs3Util.file.*;
 import static dfs3test.encrypt.Encrypt.concat;
@@ -39,12 +41,22 @@ public class Upload {
      * @throws IOException              for input output exception
      * @throws GeneralSecurityException In case of general security violation occurs
      */
+
+    // get path of the selected file
+    static String path = "C:\\Users\\Dell\\desktop\\test\\welcome.pdf";
+    static Path path1 = Paths.get(path);
+    static String fileName = path1.getFileName().toString();
+    public static String fileURI;
+    public static Boolean fBit= Boolean.TRUE;
+
+    static {
+        fileURI = DFSConfig.getRootinode() + fileName;
+    }
+
+    static long fileSize = Util.checkFileSize(path);
     public static void start() throws NullPointerException, IOException,
             GeneralSecurityException {
-        // get path of the selected file
-        String path = "C:\\Users\\Dell\\desktop\\test\\welcome.pdf";
-        //path = readpath();
-        long fileSize = Util.checkFileSize(path);
+
         //check whether adequate space is available in the user cloud
         try {
             long cloudAvlb = DFSConfig.getCloudAvlb();
@@ -52,7 +64,6 @@ public class Upload {
                 //System.out.println("Cloud space available is:" + (cloudAvlb / (1024 * 1024 * 1024)) + "GB");
                 System.out.println("File Size is: " + (fileSize / (1024 * 1024)) + "MB");
                 System.out.println("File can be uploaded");
-
                 //reading file using FileChannel and ByteBuffer
                 RandomAccessFile randomAccessFile = new RandomAccessFile(path, "r");
                 ByteBuffer encData;
@@ -68,34 +79,26 @@ public class Upload {
                     //channel.write(byteBuffer);
                     randomAccessFile.close();
                     channel.close();
+                    //Encrypt the file and key and combine both using TLV framing
                     byte[] filePlusKey = Encrypt.startEnc(plainData);
                     System.out.println("file encrypted successfully!");
                     encData = ByteBuffer.wrap(filePlusKey);
-                    System.out.println(encData.capacity());
+                    //send the file for segmentation
                     Segmentation.start(encData, path);
                     System.out.println("file segmented successfully!");
-
+                    //write inode for the file being uploaded
+                    InodeWriter.writeInode(Segmentation.nameOfFile, fileSize, Segmentation.index);
                 }
-/*
-                //read the byte array of the selected file
-                //byte[] data = readdata(path);
-
-                //Encrypt the file and key and combine both using TLV framing
-
-                //send the file for segmentation
-
-                //Retrieve the segments and upload them one by one
-                String splitFile = System.getProperty("user.dir") + System.getProperty("file.separator")
-                        + "SplitIndex.csv";
+              //Retrieve the segments and upload them one by one
+                String splitFile = System.getProperty("user.dir") + System.getProperty("file.separator")+ Segmentation.nameOfFile + "_Inode.csv";
                 String[] segmentInode = csvreader(splitFile, path);
-
                 for (int i = 0; i < segmentInode.length && !(segmentInode[i] == null); i++) {
 
                     byte[] segmentData = readdata(segmentInode[i]);
                     //Delete the segments once the data is read into byte array
                     File f;
                     f = new File(segmentInode[i]);
-                    f.delete();
+                    //f.delete();
                     //insert sequence number into the segment
                     byte[] segmentData1 = TLVParser.startFraming(segmentData, i + 1);
                     //insert tag to identify the segment as already sequenced
@@ -115,13 +118,38 @@ public class Upload {
                     Sender.start(xmlPath, "localhost");
                     System.out.println("Uploading Segment No " + (i + 1));
                 }
+                //Now uploading the inode of the file
+                String inode = System.getProperty("user.dir") + System.getProperty("file.separator") + fileName + "_Inode.xml";
+                byte[] fileInodeData = readdata(inode);
+                //Delete the segments once the data is read into byte array
+                File f;
+                f = new File(inode);
+                //f.delete();
+                //insert sequence number into the segment
+                byte[] inodeData1 = TLVParser.startFraming(fileInodeData,  1);
+                //insert tag to identify the segment as already sequenced
+                byte[] inodeData2 = TLVParser.startFraming(inodeData1, 4);
+                //Generate the inode of segment and compute the hash of the same
+                String hashedInodeInode = Hash.hashpath(fileURI);
+                //compute the hash of segment
+                String hashofInode = hashgenerator(inodeData2);
+                //Sign the hash
+                byte[] signedHashInode = GenerateKeys.signHash(hashofInode.getBytes());
+                //get the file ready to transmit after adding signed hash into the segment
+                byte[] fileTx = concat(signedHashInode, inodeData2);// combine the file,key and hash of Inode
+                // Write the XML query. Tag for upload is 1
+                String xmlPath = writer(1, hashedInodeInode, fileTx);
+                // handover the xml query to xmlSender (token for upload is 1)
+                // TODO - query the dht and get the IP
+                Sender.start(xmlPath, "localhost");
+                System.out.println("Uploading File inode..");
 
                 System.out.println("Upload completed");
                 // compute hash of the combination of encrypted Key and data of original file
                 String hashofFile = hashgenerator(encData.array());
                 // index the hash against the original inode for comparing after
                 // downloading the file from cloud. DbaseAPI.index
-                index(path, hashofFile); */
+                index(path, hashofFile);
                 DFSConfig.update(fileSize);
 
             } else {
@@ -145,7 +173,8 @@ class Segmentation {
     // for the programmer to under stand that its a segment of original file
     private static final String suffix = ".splitPart";
     static String iNode = null;
-    static String nameOfFile = null;
+    static String nameOfFile;
+    static HashMap<String, String> index=new HashMap<>();
 
     public static void start(ByteBuffer encData, String path) throws IOException {
         //new File(dir+"upload").mkdir();
@@ -168,7 +197,7 @@ class Segmentation {
      * @param kbPerSplit number of kilo bytes per chunk.
      * @throws IOException
      */
-    public static void splitFile(String inode, final String tempPath, final int kbPerSplit) throws IOException {
+    public static void splitFile (String inode, final String tempPath, final int kbPerSplit) throws IOException {
 
         File f;
         f = new File(inode);
@@ -204,12 +233,13 @@ class Segmentation {
             }
             if (remainingBytes > 0)
                 writePartToFile(remainingBytes, position * bytesPerSplit, bis, partFiles);
-        } catch (IOException e) {
+        } catch (IOException | NoSuchAlgorithmException e) {
             e.printStackTrace();
             //Delete the temporary encrypted file
             f = new File(tempPath);
             f.delete();
             //return partFiles;
+
         }
     }
 
@@ -218,7 +248,7 @@ class Segmentation {
     // writes the segments with unique name ( name of file followed by suffix .splitpart
     // followed by an integer) example xyz.splitpart.1
     private static void writePartToFile(long byteSize, long position, BufferedInputStream bis,
-                                        List<Path> partFiles) throws IOException {
+                                        List<Path> partFiles) throws IOException, NoSuchAlgorithmException {
         // path for the segment current directory followed by the inode followedby .splitpart
         // followed by the segment number
         Path segmentName = Paths.get(dir + nameOfFile + suffix + (int) ((position / (512 * 1024)) + 1));//TODO - replace the UUID with Integer.toString((position/512) - 1))
@@ -258,18 +288,23 @@ class Segmentation {
      * @param segmentName number of kilo bytes per chunk.
      * @throws IOException
      */
-    public static void splitIndex(String inode, String segmentName){
-        HashMap<String,String> index = new HashMap<>();
-        // Put elements to the map
-        index.put(inode, segmentName);// Put elements to the map
-        String fileName = "SplitIndex.csv";
-        /* Write CSV */
-        try {
-            String uploadPath = System.getProperty("user.dir") +
-                    System.getProperty("file.separator") + fileName;
+    public static void splitIndex(String inode, String segmentName) throws IOException, NoSuchAlgorithmException {
+
+        Path segmentPath = Path.of(segmentName);
+        String nameOfSegment = segmentPath.getFileName().toString();
+        byte[] segmentData = readdata(segmentName);
+        String hashOfSegment = dfs3test.encrypt.Hash.hashgenerator(segmentData);
+        index.put(nameOfSegment, hashOfSegment);
+        HashMap<String, String> csvIndex = new HashMap<>();
+        //Put elements to the map
+        csvIndex.put(inode, segmentName);// Put elements to the map
+        String fileName = inode + "_inode.csv";
+        // Write CSV
+       try {
+            String uploadPath = System.getProperty("user.dir") + System.getProperty("file.separator")+ nameOfFile + "_Inode.csv";
             // true is for appending and false is for over writing
             FileWriter writer = new FileWriter(uploadPath, true);
-            Set set = index.entrySet();
+            Set set = csvIndex.entrySet();
             // Get an iterator for entering the data from hash map
             // to csv file
             for (Object o : set) {
@@ -288,6 +323,9 @@ class Segmentation {
         } catch (IOException e) {
             e.printStackTrace();
         }
+        //System.out.println(index.entrySet());
+
     }
+
 }
 //end of class

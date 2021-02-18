@@ -20,6 +20,23 @@ public class DFSConfig implements Serializable {
      */
     private static final long serialVersionUID = 1L;
     private static volatile DFSConfig config;
+
+    public static String getRootinode() {
+        try {
+            FileInputStream fis= new FileInputStream(configFile);
+            ObjectInputStream ois = new ObjectInputStream(fis);
+            config = (DFSConfig)ois.readObject();
+            ois.close();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+        return config.rootinode;
+    }
+
     String rootinode;
     String PubU = null;
     String PubN = null;
@@ -27,6 +44,7 @@ public class DFSConfig implements Serializable {
     public long localfree;
     public long localOffered;
     public long localOccupied;
+    public static String mailID;
 
     public static void update(long fileSize) throws IOException {
         config.setCloudOccupied(fileSize);
@@ -160,12 +178,12 @@ public class DFSConfig implements Serializable {
         while(i<3) {
             System.out.println("Please specify your registered email ID for B4:");
             Scanner sc = new Scanner(System.in);
-            String mailid=sc.nextLine();
+            mailID=sc.nextLine();
             System.out.println("Please specify local disk to be offered in GB:");
             String localdisk = sc.nextLine();
-            if (Util.isValidEmail(mailid) && Util.isValidFloat(localdisk))
+            if (Util.isValidEmail(mailID) && Util.isValidFloat(localdisk))
             {
-                config.rootinode = "dfs://"+mailid+"/";
+                config.rootinode = "dfs://"+mailID+"/";
                 float localoffered = Float.parseFloat(localdisk)*1024*1024*1024;
                 long localOffered = (long)localoffered;
                 if(config.initlocalFree>localOffered)
@@ -318,6 +336,7 @@ public class DFSConfig implements Serializable {
             System.out.println("Your authorized cloud space is: "+ (config.getCloudAuth()/(1024*1024*1024))+"GB");
             System.out.println("You have already used: "+ (config.getCloudOccupied()/(1024*1024))+"MB cloud space");
             System.out.println("Cloud space available is:" + (config.getCloudAvlb()/(1024*1024*1024))+"GB");
+
             ois.close();
         } catch (FileNotFoundException e) {
             e.printStackTrace();

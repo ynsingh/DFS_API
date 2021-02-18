@@ -86,7 +86,7 @@ public class TLVParser {
         }
         return result;
     }
-    // method to put the data into the object aftr skipping the initial 8 bytes
+    // method to put the data into the object after skipping the initial 8 bytes
     // as the same is used for Type(4bytes) and Length (4bytes) respectively
     public void putBytesValue(int type, byte[] value) {
          frame.put(type, value);
